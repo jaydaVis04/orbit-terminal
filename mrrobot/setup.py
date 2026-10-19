@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import socket
 import subprocess
 import tarfile
@@ -24,6 +25,41 @@ PWNDBG = "2026.09.15"
 STARSHIP = "1.27.0"
 NVIM = "0.12.0"
 KITTY = "0.49.2"
+
+
+def install_appearance():
+    shutil.copy2(REPO / "assets/mrrobot.png", ROOT / "wallpaper.png")
+    directory = Path.home() / ".config/kitty"
+    directory.mkdir(parents=True, exist_ok=True)
+    addon = directory / "mrrobot.conf"
+    contents = (REPO / "config/kitty/mrrobot.conf").read_bytes()
+    if addon.exists() and addon.read_bytes() != contents:
+        backup = addon.with_suffix(".conf.mrrobot.bak")
+        if not backup.exists():
+            shutil.copy2(addon, backup)
+    addon.write_bytes(contents)
+    config = directory / "kitty.conf"
+    current = config.read_text() if config.exists() else ""
+    if "include mrrobot.conf" not in [line.strip() for line in current.splitlines()]:
+        backup = config.with_suffix(".conf.mrrobot.bak")
+        if config.exists() and not backup.exists():
+            shutil.copy2(config, backup)
+        config.write_text(current.rstrip() + "\n\ninclude mrrobot.conf\n")
+    settings_path = ROOT / "settings.json"
+    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    settings.setdefault("fade_seconds", 2.4)
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+    try:
+        listing = subprocess.run(["ps", "-axo", "pid=,comm="], capture_output=True, text=True, timeout=5)
+        for line in listing.stdout.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and Path(parts[1]).name == "kitty":
+                try:
+                    os.kill(int(parts[0]), signal.SIGUSR1)
+                except OSError:
+                    pass
+    except (OSError, subprocess.SubprocessError):
+        print("Reload Kitty with Cmd+Shift+R to enable wallpaper changes.")
 
 
 def download(url, path):
@@ -164,7 +200,11 @@ def freeze(ssh):
     os.replace(ROOT / "system.qcow2.partial", ROOT / "system.qcow2")
     (ROOT / "ready.json").write_text(json.dumps({"architecture": "x86_64", "system": "Ubuntu 24.04",
         "pwndbg": PWNDBG, "starship": STARSHIP, "nvim": NVIM, "ephemeral": True}, indent=2) + "\n")
-    (ROOT / "settings.json").write_text('{"memory_mb": 3072, "cpus": 4}\n')
+    settings_path = ROOT / "settings.json"
+    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    settings.setdefault("memory_mb", 3072)
+    settings.setdefault("cpus", 4)
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
     shutil.rmtree(BUILD)
     destination = Path.home() / "bin/mrrobot"
     destination.parent.mkdir(exist_ok=True)
@@ -178,10 +218,13 @@ def main():
         if not shutil.which(executable):
             raise RuntimeError(f"Required host program is missing: {executable}")
     if (ROOT / "ready.json").exists():
+        install_appearance()
+        shutil.copy2(REPO / "bin/mrrobot", Path.home() / "bin/mrrobot")
         print("The offline image is already prepared. Run `mrrobot`.")
         return
     ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
     ROOT.chmod(0o700)
+    install_appearance()
     BUILD.mkdir(exist_ok=True)
     if not (ROOT / "identity").exists():
         subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "mrrobot-local", "-f", str(ROOT / "identity")], check=True)

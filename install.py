@@ -74,6 +74,7 @@ def kitty_option(text, key, value):
 
 def render_profile(theme, c, home):
     files = {}
+    files["kitty/mrrobot.conf"] = (REPO / "config/kitty/mrrobot.conf").read_bytes()
     for directory in (REPO / "config/nvim", REPO / "config/neofetch"):
         for p in directory.rglob("*"):
             if p.is_file():
@@ -187,6 +188,7 @@ def install(home, config, theme, no_reload=False, dry_run=False):
         steps.append((root / "assets/orbit.png", ((REPO / "assets/orbit.png").read_bytes(), 0o644)))
         steps.append((home / "bin/swap", ((REPO / "bin/swap").read_bytes(), 0o755)))
         steps.append((home / "bin/mrrobot", ((REPO / "bin/mrrobot").read_bytes(), 0o755)))
+        steps.append((home / ".local/share/mrrobot/wallpaper.png", ((REPO / "assets/mrrobot.png").read_bytes(), 0o644)))
         steps.append((home / "bin/neofetch", ((REPO / "vendor/neofetch/neofetch").read_bytes(), 0o755)))
         integration = (REPO / "config/shell.zsh").read_text()
         prelude = f'export EDITOR={shlex.quote(c["editor"]["command"])}\nexport VISUAL="$EDITOR"\n'

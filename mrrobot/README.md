@@ -28,10 +28,70 @@ Multiple terminals can enter the same running lab; it closes after the last one
 leaves. `mrrobot stop` explicitly discards the active workspace.
 
 The terminal turns red while inside and restores its configured colors when SSH
-returns. The guest prompt labels the environment and network mode. Neovim uses
+returns. In Kitty, the right-aligned black, red, and white MR. ROBOT/fsociety
+wallpaper fades in over 2.4 seconds. A boot display shows elapsed time, the active
+stage, and an animated activity indicator while the emulator starts. Kernel and
+service stages come from the guest console; SSH is marked ready only after a
+successful connection. The configured wallpaper fades back when you leave.
+
+Backgrounds are shared by all tabs and panes in one Kitty OS window. A separate
+Kitty window for your Mac shell keeps its usual wallpaper. Push, pull, status,
+and command-only runs do not change the wallpaper. Multiple MRROBOT shells in
+one Kitty OS window keep its wallpaper until the last one leaves.
+
+The guest prompt labels the environment and network mode. Neovim uses
 the same `Space f h` file finder, `Space f w` live grep, and `Space e` tree focus
 bindings as ORBIT. The guest tmux prefix is Option-A; inside a host tmux with
 the same prefix, press Option-A twice to pass it through.
+
+## Typical two-shell workflow
+
+1. In **Mac shell 1**, enter the lab and wait for its red prompt:
+
+   ```sh
+   mrrobot
+   ```
+
+2. Leave **Mac shell 2** on macOS. Push your challenge into the running lab:
+
+   ```sh
+   mrrobot push mac:~/Downloads/challenge ctf:/work/challenge
+   ```
+
+3. Back in **shell 1, inside the lab**, inspect and debug it:
+
+   ```sh
+   cd /work
+   file challenge
+   checksec --file=./challenge
+   gdb ./challenge
+   # In GDB: break main, run, nexti, info registers, quit
+   strace -o trace.log ./challenge
+   ltrace ./challenge
+   nvim exploit.py
+   python3 exploit.py
+   ```
+
+   `gdb` includes Pwndbg. Python includes pwntools. Use `tmux` inside the lab to
+   split your analysis into panes; its sessions also disappear when the VM
+   stops. Neovim's `Space f h`, `Space f w`, and `Space e` find files, grep, and
+   focus the file tree.
+
+4. In **Mac shell 2**, save your work before leaving:
+
+   ```sh
+   mrrobot pull ctf:/work/exploit.py mac:~/Downloads/exploit.py
+   # Or copy the whole workspace into a new local directory:
+   mrrobot pull -r ctf:/work mac:~/CTF/saved-session
+   ```
+
+5. In **shell 1**, type `exit` or press Ctrl-D to return to macOS. Exiting the
+   last MRROBOT shell shuts down the VM and discards the workspace. Your Kitty
+   appearance returns automatically. From a Mac shell, `mrrobot stop` explicitly
+   discards it; `mrrobot status` checks whether it is running.
+
+No Wi-Fi is required to launch, use the bundled tools, or transfer local files.
+For remote CTF services, start with `mrrobot --online` before pushing work.
 
 ## Offline and storage
 
@@ -55,6 +115,15 @@ CPU/RAM settings are local in `~/.local/share/mrrobot/settings.json`; the defaul
 are four emulated CPUs and 3072 MiB RAM. Cross-architecture system emulation is
 slower than native execution. This environment targets x86 Linux ELF binaries;
 it does not promise to run every Windows or macOS x86 executable.
+
+The same settings file accepts `"fade_seconds": 2.4`; set it to `0` to switch
+wallpapers instantly. The installed wallpaper is
+`~/.local/share/mrrobot/wallpaper.png`. Fade frames are sent directly to Kitty's
+graphics protocol; no animation-frame files are written. Kitty's small
+`mrrobot.conf` include enables the two appearance-control commands used here.
+Reload Kitty with Cmd+Shift+R if an already-open window has not loaded it yet.
+
+[Wallpaper and generation prompt](ARTWORK.md)
 
 ## Tools
 

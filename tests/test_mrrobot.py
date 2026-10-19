@@ -2,11 +2,12 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 REPO = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader("mrrobot_cli", str(REPO / "bin/mrrobot"))
@@ -82,6 +83,59 @@ class LabTests(unittest.TestCase):
         self.assertIn("MRROBOT", output.getvalue())
         self.assertIn("\x1b]111", output.getvalue())
         self.assertIn("\x1b]104", output.getvalue())
+
+    def wallpaper(self):
+        wallpaper = lab.KittyWallpaper()
+        wallpaper.enabled = True
+        wallpaper.window = "11"
+        wallpaper.control = Mock(return_value=json.dumps([{"id": 7, "tabs": []}]))
+        wallpaper.change = Mock()
+        return wallpaper
+
+    def test_wallpaper_restores_after_an_error(self):
+        wallpaper = self.wallpaper()
+        with self.assertRaises(RuntimeError), patch.object(lab, "alive", return_value=True):
+            with wallpaper:
+                raise RuntimeError("SSH failed")
+        self.assertEqual(wallpaper.change.call_args_list[-1].args, ("0",))
+        self.assertFalse((lab.ROOT / "appearance.json").exists())
+
+    def test_wallpaper_restores_after_the_last_client_in_its_os_window(self):
+        first, second = self.wallpaper(), self.wallpaper()
+        with patch.object(lab, "alive", return_value=True):
+            with patch.object(lab.os, "getpid", return_value=111):
+                first.__enter__()
+            with patch.object(lab.os, "getpid", return_value=222):
+                second.__enter__()
+            second.change.assert_not_called()
+            with patch.object(lab.os, "getpid", return_value=111):
+                first.__exit__(None, None, None)
+            self.assertEqual(first.change.call_count, 1)
+            with patch.object(lab.os, "getpid", return_value=222):
+                second.__exit__(None, None, None)
+        second.change.assert_called_once_with("0", entering=False)
+        self.assertFalse((lab.ROOT / "appearance.json").exists())
+
+    def test_failed_wallpaper_change_removes_its_graphics_cover(self):
+        wallpaper = lab.KittyWallpaper()
+        with patch.object(wallpaper, "fade"), \
+             patch.object(wallpaper, "control", side_effect=OSError("Kitty unavailable")), \
+             patch.object(wallpaper, "clear_cover") as clear:
+            with self.assertRaises(OSError):
+                wallpaper.change("wallpaper.png", entering=True)
+            clear.assert_called_once()
+
+    def test_boot_display_uses_guest_logs_without_claiming_ssh_is_ready(self):
+        lab.RUN.mkdir()
+        console = lab.RUN / "console.log"
+        screen = lab.BootScreen()
+        screen.enabled = True
+        console.write_text("Linux version 6.8.0\n")
+        screen.console()
+        self.assertEqual(screen.stage, 4)
+        console.write_text("Started ssh.service - OpenBSD Secure Shell server.\n")
+        screen.console()
+        self.assertEqual(screen.stage, 5)
 
 
 if __name__ == "__main__":
