@@ -75,10 +75,10 @@ Option-A twice sends a literal Option-A to the application.
 | [ | Copy mode; v selects, y copies to macOS clipboard, Escape exits |
 | d | Detach |
 | r | Reload configuration |
-| I | Install tmux plugins |
 
-**Option-S** saves sessions; **Option-R** restores. Continuum saves every 15
-minutes and restores at server startup. New windows and panes start at index 1.
+Sessions stay in the running tmux server when you detach. Use `tmux attach` to
+return, or `tmux new -s NAME` for a new session. New windows and panes start at
+index 1. There is no automatic session saving or restoration.
 
 ## Kitty and shell
 

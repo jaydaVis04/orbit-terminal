@@ -1,0 +1,63 @@
+MRROBOT / OFFLINE TOOLBOX
+
+Linux essentials
+  ls -lah                cat, less, head, tail, wc, sort, uniq, cut, tr, paste
+  cp, mv, rm, mkdir      touch, ln, chmod, chown, stat, du, df, date, tee
+  find, xargs, grep      sed, awk, rg, fd, diff, cmp, patch, strings
+  ps, top, htop          kill, pkill, pgrep, jobs, fg, bg, watch, time, timeout
+  lsof, ss, ip, ping     dig, host, nc, socat, curl, wget, ssh, scp, rsync
+  tar, zip, unzip, 7z    gzip, bzip2, xz, zstd, lz4, cpio, unrar
+  man COMMAND           command --help, help, type, which, whereis
+  fzf, tree, bat         jq, sqlite3, openssl, base64, sha256sum, md5sum, bc
+
+Inspect and reverse
+  file ./challenge
+  strings -a ./challenge | less
+  strings -a -el ./challenge | less         # UTF-16 little endian strings
+  checksec --file=./challenge
+  readelf -h -l -S -s -d ./challenge
+  objdump -d -M intel ./challenge | less
+  nm, addr2line, objcopy, strip, size, c++filt, lddtree, patchelf
+  xxd, hexdump -C, od, hexedit, ndisasm, nasm, yasm
+  r2 -A ./challenge                        # interactive radare2 disassembler
+  rabin2 -I -S -s -z ./challenge
+  radiff2 -C ./original ./patched
+  decompile ./challenge                    # Ghidra -> challenge.decompiled.c
+  ghidra-headless                          # full Ghidra headless interface
+  java, javac, javap, jar, jdeps            # Java inspection and compilation
+
+Run and debug
+  gdb ./challenge                         # Pwndbg loaded automatically
+  gdb-plain ./challenge                    # plain GNU GDB
+  strace -f -o syscalls.log ./challenge
+  ltrace -f -o libraries.log ./challenge
+  valgrind ./challenge
+  ROPgadget --binary ./challenge
+  ropper --file ./challenge --search 'pop rdi'
+  one_gadget /lib/x86_64-linux-gnu/libc.so.6
+  seccomp-tools dump ./challenge
+  pwn cyclic 100; pwn cyclic -l 0x61616164
+  gcc -g -O0 probe.c -o probe; gcc -m32 -g probe.c -o probe32
+
+Extract and inspect data
+  binwalk ./firmware; binwalk -e ./firmware
+  foremost -i ./image -o recovered
+  exiftool ./file; yara rules.yar ./file
+  upx -t ./packed; upx -d ./packed
+  7z l ./archive; 7z x ./archive
+  unsquashfs, mmls, fls, icat
+  tshark -r capture.pcap; sudo tcpdump -i any -nn
+
+Python: python / python3 / ipython (already configured; no activation needed)
+  pwntools, angr + claripy, Z3, Capstone, Unicorn, Keystone, LIEF,
+  pefile, pyelftools, ROPgadget, Ropper, r2pipe, yara, PyCryptodome, requests
+  Resolved versions: /usr/local/share/mrrobot/python.lock
+  Ubuntu package versions: /usr/local/share/mrrobot/packages.lock
+
+Editor and shell
+  nvim FILE; nano FILE; tmux
+  Neovim: Space f h = files, Space f w = grep, Space e = tree
+  ctf-tools = this reference; ctf-verify = test the installed toolchain
+
+Sessions are disposable. Pull your files to the Mac before the last shell exits.
+Network commands need `mrrobot --online` for remote hosts; local tools work offline.

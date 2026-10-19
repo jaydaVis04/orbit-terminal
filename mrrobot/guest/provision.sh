@@ -57,6 +57,7 @@ export VISUAL=nvim
 PROFILE
 systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service pollinate.service || true
 systemctl mask apt-daily.service apt-daily-upgrade.service || true
+bash "$work/tools.sh"
 # The prepared image is self-contained; future boots need no cloud metadata.
 touch /etc/cloud/cloud-init.disabled
 cat > /etc/motd <<'MOTD'

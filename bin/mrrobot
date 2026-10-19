@@ -393,7 +393,7 @@ def start_unlocked(online=False, progress=None):
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    args = [qemu, "-name", "mrrobot", "-machine", "q35", "-accel", "tcg,thread=multi,tb-size=128",
+    args = [qemu, "-nodefaults", "-name", "mrrobot", "-machine", "q35", "-accel", "tcg,thread=multi,tb-size=128",
             "-cpu", "max", "-smp", str(cpus), "-m", str(memory),
             "-drive", f"if=pflash,format=raw,readonly=on,file={ROOT}/firmware.fd",
             "-drive", f"if=pflash,format=raw,file={RUN}/vars.fd",

@@ -12,4 +12,4 @@ jobs:
           python-version: '3.12'
       - run: python3 -m unittest discover -s tests -v
       - run: python3 scripts/check_privacy.py
-      - run: bash -n config/neofetch/config.conf vendor/neofetch/neofetch mrrobot/guest/provision.sh mrrobot/guest/verify.sh mrrobot/guest/bashrc
+      - run: bash -n config/neofetch/config.conf vendor/neofetch/neofetch mrrobot/guest/provision.sh mrrobot/guest/tools.sh mrrobot/guest/commands.sh mrrobot/guest/optimize.sh mrrobot/guest/verify.sh mrrobot/guest/bashrc

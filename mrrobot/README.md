@@ -116,6 +116,13 @@ are four emulated CPUs and 3072 MiB RAM. Cross-architecture system emulation is
 slower than native execution. This environment targets x86 Linux ELF binaries;
 it does not promise to run every Windows or macOS x86 executable.
 
+The emulator creates only the devices the lab uses. Snap and Apport are removed
+from the prepared image, system logs stay in a bounded RAM journal, and Ghidra
+keeps its Linux x86 native helpers. Linux man pages, analysis libraries, and debug
+symbols remain available offline. Core dumps go directly to `/work/core.PROGRAM.PID`
+for GDB and pwntools analysis. Ghidra's launcher uses JVM settings tested under
+x86 emulation.
+
 The same settings file accepts `"fade_seconds": 2.4`; set it to `0` to switch
 wallpapers instantly. The installed wallpaper is
 `~/.local/share/mrrobot/wallpaper.png`. Fade frames are sent directly to Kitty's
@@ -127,11 +134,39 @@ Reload Kitty with Cmd+Shift+R if an already-open window has not loaded it yet.
 
 ## Tools
 
-GDB with Pwndbg by default, plain GDB (`gdb-plain`), gdbserver, strace, ltrace,
-file, checksec, tmux, Neovim, Python, pwntools, GCC/G++, multilib libraries,
-libc debug symbols, binutils, ROPgadget, patchelf, ELF utilities, Valgrind,
-socat, netcat, NASM, xxd, hexedit, ripgrep, fd, Git, curl, archive tools, and
-local manual pages. The guest user is `ctf` with passwordless sudo inside the VM.
+Run `ctf-tools` inside the lab for an offline command reference with examples.
+`ctf-verify` runs the same functional checks used to prepare the image.
+
+| Use | Included tools |
+| --- | --- |
+| Everyday Linux | Bash/completion, coreutils (`cat`, `ls`, `cp`, `mv`, `head`, `tail`, `sort`, `uniq`, `cut`, `tr`, `wc`, `tee`, `timeout`, hashes), `less`, `man`, find/xargs, grep/sed/awk, diff/cmp/patch, tree, fzf, bat, ripgrep, fd, nano, vi, Neovim, tmux |
+| Processes and network | ps/top/htop, watch, kill/pkill/pgrep, lsof, time, ip/ss, ping, dig/host, traceroute, netcat, socat, curl, wget, SSH/SCP, rsync, Git, tcpdump, tshark |
+| Static reverse engineering | strings, readelf, objdump, nm, addr2line, objcopy, strip, size, c++filt, ELF utilities, patchelf, lddtree, xxd/hexdump/od, hexedit, radare2/rabin2/radiff2, NASM/ndisasm/YASM |
+| Decompilation | Ghidra 12.1.4 headless, `decompile` to export C pseudocode, JDK 21 including javap/jar/jdeps |
+| Dynamic analysis | GDB with Pwndbg by default, `gdb-plain`, gdbserver, strace, ltrace, Valgrind, checksec, ROPgadget, Ropper, one_gadget, seccomp-tools, pwntools |
+| Python analysis | angr/Claripy, Z3, Capstone, Unicorn, Keystone, LIEF, pefile, pyelftools, r2pipe, yara-python, PyCryptodome, requests, IPython |
+| Extraction and data | Binwalk, foremost, ExifTool, YARA, UPX, SquashFS tools, Sleuth Kit, tar/gzip/bzip2/xz/zstd/lz4, zip/unzip/7z/unrar/cpio, jq, SQLite, OpenSSL, bc/dc, dos2unix |
+| Building | GCC/G++, make, CMake, pkg-config, Python headers/venv/pip, 32-bit multilib, libc debug symbols, local manual pages |
+
+`strings` is supplied by binutils. For example:
+
+```sh
+strings -a ./challenge | less
+strings -a -el ./challenge | less  # UTF-16 little endian strings
+objdump -d -M intel ./challenge | less
+decompile ./challenge             # writes challenge.decompiled.c
+r2 -A ./challenge
+ropper --file ./challenge --search 'pop rdi'
+```
+
+`python` and `python3` select the prepared CTF virtual environment automatically,
+including for `mrrobot run` commands. Ubuntu's own `/usr/bin/python3` stays
+separate. Resolved Python and Ubuntu package versions are recorded inside the
+guest under `/usr/local/share/mrrobot/`. All these tools work offline for local
+analysis; contacting remote hosts needs `mrrobot --online`. Ghidra runs headlessly
+in this terminal lab and does not require a desktop or X server.
+
+The guest user is `ctf` with passwordless sudo inside the VM.
 
 ## Prepare on another Mac
 
@@ -146,6 +181,17 @@ Preparation downloads an Ubuntu 24.04 amd64 cloud image and verifies its SHA-256
 installs the toolchain, tests both ELF architectures, compresses the final image,
 and installs `~/bin/mrrobot`. Subsequent launches need no network or downloads.
 The VM image and SSH identity are never committed to Git.
+
+To add the expanded toolkit to an older installation, run once while online:
+
+```sh
+python3 mrrobot/setup.py --upgrade-tools
+```
+
+The upgrade builds and tests a separate overlay, then replaces the prepared base
+image only after verification succeeds. Active sessions keep their current image
+and work; the new tools are available when the next workspace starts. Build
+downloads, package caches, and the upgrade directory are removed on success.
 
 For automation, `mrrobot run -- command args...` executes a command in a disposable
 session and removes that session afterward, unless another interactive client
