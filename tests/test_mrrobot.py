@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock, patch
 
@@ -124,6 +125,39 @@ class LabTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 wallpaper.change("wallpaper.png", entering=True)
             clear.assert_called_once()
+
+    def test_boot_redraw_waits_for_wallpaper_transfer_to_finish(self):
+        attempting = threading.Event()
+        rendered = threading.Event()
+        worker = None
+
+        class Terminal(io.StringIO):
+            def write(self, value):
+                rendered.set()
+                return super().write(value)
+
+        def redraw():
+            attempting.set()
+            lab.emit("boot frame", passthrough=False)
+
+        def transfer(*args, **kwargs):
+            nonlocal worker
+            worker = threading.Thread(target=redraw, daemon=True)
+            worker.start()
+            self.assertTrue(attempting.wait(1))
+            self.assertFalse(rendered.wait(0.05), "Boot output interrupted the Kitty control packet")
+            return Mock(returncode=0, stdout="ready", stderr="")
+
+        output = Terminal()
+        wallpaper = lab.KittyWallpaper()
+        try:
+            with contextlib.redirect_stdout(output), patch.object(lab.subprocess, "run", side_effect=transfer):
+                self.assertEqual(wallpaper.control("ls"), "ready")
+                self.assertTrue(rendered.wait(1), "Boot animation did not resume after the transfer")
+        finally:
+            if worker:
+                worker.join(timeout=1)
+        self.assertEqual(output.getvalue(), "boot frame")
 
     def test_boot_display_uses_guest_logs_without_claiming_ssh_is_ready(self):
         lab.RUN.mkdir()

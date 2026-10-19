@@ -145,8 +145,12 @@ class KittyWallpaper:
         # Talk to the terminal that actually contains this shell. In particular,
         # do not inherit a stale socket address from a detached tmux server.
         environment.pop("KITTY_LISTEN_ON", None)
-        result = subprocess.run([self.binary, "@", "--use-password", "always", "--password", "", *arguments],
-                                capture_output=True, text=True, timeout=12, env=environment)
+        # Kitty's terminal transport streams long control packets. A boot redraw
+        # between writes can corrupt the image upload, so pause display output
+        # until the command and its response have completed.
+        with DISPLAY_LOCK:
+            result = subprocess.run([self.binary, "@", "--use-password", "always", "--password", "", *arguments],
+                                    capture_output=True, text=True, timeout=12, env=environment)
         if result.returncode:
             raise OSError(result.stderr.strip() or "Kitty background control is unavailable")
         return result.stdout
