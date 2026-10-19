@@ -1,0 +1,34 @@
+add_newline = true
+format = """
+[╭─](#7a2331)[](#ff334f)[ MRROBOT ](bold fg:#10070b bg:#ff334f)[](#ff334f) [x86_64](bold #ff6b7f) $env_var$line_break\
+[│ ](#7a2331)$directory$git_branch$git_status$cmd_duration$line_break\
+[╰─](#7a2331)$character"""
+
+[directory]
+style = 'bold #ffd5dc'
+format = '[$path]($style) '
+truncation_length = 4
+
+[git_branch]
+symbol = ' '
+style = '#ff6b7f'
+format = '[$symbol$branch]($style) '
+
+[git_status]
+style = '#ff9da7'
+format = '([$all_status$ahead_behind]($style) )'
+
+[cmd_duration]
+min_time = 1500
+style = '#a96570'
+format = '[$duration]($style) '
+
+[env_var.MRROBOT_NETWORK]
+variable = 'MRROBOT_NETWORK'
+default = 'offline'
+style = '#a96570'
+format = '[$env_value]($style)'
+
+[character]
+success_symbol = '[❯](bold #ff334f)'
+error_symbol = '[✗](bold #ffffff)'

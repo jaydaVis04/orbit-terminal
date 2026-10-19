@@ -1,0 +1,17 @@
+
+# MRROBOT: no persistent history or package caches in analysis sessions.
+export XDG_CACHE_HOME=/tmp/cache
+export PIP_NO_CACHE_DIR=1 UV_NO_CACHE=1 PYTHONDONTWRITEBYTECODE=1
+export HISTFILE=/dev/null LESSHISTFILE=- GDBHISTFILE=/dev/null DEBUGINFOD_URLS=""
+export EDITOR=nvim VISUAL=nvim
+ulimit -c unlimited
+alias ll='ls -lah --color=auto'
+alias grep='grep --color=auto'
+alias gdb-vanilla='/usr/bin/gdb'
+if command -v starship >/dev/null; then eval "$(starship init bash)"; fi
+if [[ $- == *i* && -z ${MRROBOT_BANNER_SHOWN:-} ]]; then
+  export MRROBOT_BANNER_SHOWN=1
+  printf '\n\033[1;31m  ┌──────────────────────────────────────────┐\n  │   fsociety  /  MRROBOT  /  x86 CTF LAB   │\n  └──────────────────────────────────────────┘\033[0m\n'
+  printf '  x86 Linux debugging · workspace /work\n'
+  printf '  Temporary session: pull files to the Mac before leaving.\n\n'
+fi

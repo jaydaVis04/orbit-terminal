@@ -8,7 +8,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PATTERNS = {
-    "absolute user home": re.compile(rb"/(?:Users|home)/[A-Za-z0-9][A-Za-z0-9_.-]+/"),
+    # /home/ctf is the fixed, generic account inside the emulated lab.
+    "absolute user home": re.compile(rb"(?:/Users/[A-Za-z0-9][A-Za-z0-9_.-]+/|/home/(?!ctf/)[A-Za-z0-9][A-Za-z0-9_.-]+/)"),
     "private key": re.compile(rb"-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----"),
     "GitHub token": re.compile(rb"(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})"),
     "OpenAI credential": re.compile(rb"sk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{32,}"),

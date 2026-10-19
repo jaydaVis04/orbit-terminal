@@ -1,0 +1,327 @@
+#!/usr/bin/env python3
+"""Enter the offline x86 Linux CTF lab, or transfer files over its local SSH link."""
+
+import argparse
+from contextlib import contextmanager
+import fcntl
+import json
+import os
+from pathlib import Path, PurePosixPath
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+
+ROOT = Path(os.environ.get("MRROBOT_HOME", Path.home() / ".local/share/mrrobot")).expanduser().resolve()
+RUN = ROOT / "run"
+STATE = ROOT / "state.json"
+
+
+class LabError(Exception):
+    pass
+
+
+@contextmanager
+def locked():
+    if not ROOT.is_dir():
+        raise LabError("MRROBOT is not installed. Run the setup script while online first.")
+    with (ROOT / ".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def save(state):
+    temp = ROOT / ".state.tmp"
+    temp.write_text(json.dumps(state, indent=2) + "\n")
+    temp.chmod(0o600)
+    os.replace(temp, STATE)
+
+
+def alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def monitor(command):
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(3)
+        connection.connect(str(RUN / "monitor.sock"))
+        connection.sendall((command + "\n").encode())
+
+
+def current():
+    if not STATE.exists():
+        return None
+    state = json.loads(STATE.read_text())
+    if not alive(state.get("pid")):
+        return None
+    try:
+        monitor("info status")
+    except OSError:
+        return None
+    state["clients"] = [p for p in state.get("clients", []) if alive(p)]
+    return state
+
+
+def cleanup():
+    # Only the fixed runtime directory contains disposable overlays and logs.
+    if RUN.is_symlink():
+        raise LabError("Refusing to clean a symlink runtime directory")
+    if RUN.exists():
+        if not (RUN / ".mrrobot-session").is_file():
+            raise LabError("Refusing to remove an unrecognized runtime directory")
+        shutil.rmtree(RUN)
+    STATE.unlink(missing_ok=True)
+
+
+def stop_unlocked():
+    state = current()
+    if state:
+        try:
+            monitor("system_powerdown")
+        except OSError:
+            pass
+        deadline = time.monotonic() + 20
+        while alive(state["pid"]) and (RUN / "monitor.sock").exists() and time.monotonic() < deadline:
+            time.sleep(0.25)
+        if (RUN / "monitor.sock").exists():
+            monitor("quit")
+            deadline = time.monotonic() + 10
+            while alive(state["pid"]) and time.monotonic() < deadline:
+                time.sleep(0.1)
+            if alive(state["pid"]):
+                raise LabError("QEMU has not stopped yet; retry `mrrobot stop` before cleaning session files")
+    cleanup()
+
+
+def ssh_options(state):
+    return ["-F", "/dev/null", "-i", str(ROOT / "identity"),
+            "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
+            "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
+            "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
+            "-o", "HostKeyAlias=mrrobot", "-o", f"UserKnownHostsFile={ROOT / 'known_hosts'}",
+            "-o", "ConnectTimeout=3", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3"]
+
+
+def ssh(state, command, tty=False, **kwargs):
+    args = ["ssh", *ssh_options(state), "-p", str(state["port"])]
+    if tty:
+        args.append("-tt")
+    args += ["ctf@127.0.0.1", command]
+    return subprocess.run(args, **kwargs)
+
+
+def start_unlocked(online=False):
+    state = current()
+    if state:
+        if online and not state["online"]:
+            raise LabError("The current lab is offline. Export work and run `mrrobot stop` before starting with --online.")
+        return state
+    if not (ROOT / "system.qcow2").is_file() or not (ROOT / "ready.json").is_file():
+        raise LabError("The offline system image is not ready. Complete setup first.")
+    qemu = shutil.which("qemu-system-x86_64")
+    image = shutil.which("qemu-img")
+    if not qemu or not image:
+        raise LabError("QEMU is required; install it before using the offline lab.")
+    settings_path = ROOT / "settings.json"
+    settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
+    memory, cpus = int(settings.get("memory_mb", 3072)), int(settings.get("cpus", 4))
+    if not 1024 <= memory <= 16384 or not 1 <= cpus <= 16:
+        raise LabError("Use 1024–16384 memory_mb and 1–16 cpus in settings.json")
+    cleanup()
+    RUN.mkdir(mode=0o700)
+    (RUN / ".mrrobot-session").write_text("disposable workspace\n")
+    shutil.copy2(ROOT / "vars.fd", RUN / "vars.fd")
+    subprocess.run([image, "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b",
+                    str(ROOT / "system.qcow2"), str(RUN / "session.qcow2")], check=True)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    args = [qemu, "-name", "mrrobot", "-machine", "q35", "-accel", "tcg,thread=multi,tb-size=128",
+            "-cpu", "max", "-smp", str(cpus), "-m", str(memory),
+            "-drive", f"if=pflash,format=raw,readonly=on,file={ROOT}/firmware.fd",
+            "-drive", f"if=pflash,format=raw,file={RUN}/vars.fd",
+            "-drive", f"file={RUN}/session.qcow2,format=qcow2,if=virtio,discard=unmap",
+            "-netdev", f"user,id=net0,restrict={'off' if online else 'on'},hostfwd=tcp:127.0.0.1:{port}-:22",
+            "-device", "virtio-net-pci,netdev=net0", "-display", "none",
+            "-serial", f"file:{RUN}/console.log", "-monitor", f"unix:{RUN}/monitor.sock,server=on,wait=off",
+            "-pidfile", str(RUN / "qemu.pid"), "-daemonize"]
+    result = subprocess.run(args, capture_output=True, text=True)
+    if result.returncode:
+        cleanup()
+        raise LabError("Could not start QEMU: " + result.stderr.strip())
+    state = {"pid": int((RUN / "qemu.pid").read_text()), "port": port, "online": online,
+             "clients": [], "pending_entry": False}
+    save(state)
+    print("Booting MRROBOT / x86 Linux / " + ("online" if online else "offline") + "…", flush=True)
+    try:
+        deadline = time.monotonic() + 240
+        while time.monotonic() < deadline:
+            result = ssh(state, "test -f /etc/mrrobot-ready", capture_output=True)
+            if result.returncode == 0:
+                return state
+            if not alive(state["pid"]):
+                break
+            time.sleep(1)
+        raise LabError("The lab did not finish booting; inspect the runtime console log.")
+    except BaseException:
+        stop_unlocked()
+        raise
+
+
+@contextmanager
+def activity(online=False, entry=False, require_running=False):
+    with locked():
+        state = current()
+        if require_running and not state:
+            raise LabError("No active workspace. Start `mrrobot` or push a file first.")
+        state = start_unlocked(online)
+        primed_here = False
+        if entry:
+            state["pending_entry"] = False
+        elif not state["clients"] and not require_running:
+            primed_here = not state["pending_entry"]
+            state["pending_entry"] = True
+        state["clients"].append(os.getpid())
+        save(state)
+    completed = False
+    try:
+        yield state
+        completed = True
+    finally:
+        with locked():
+            state = current()
+            if state:
+                if primed_here and not completed:
+                    state["pending_entry"] = False
+                state["clients"] = [p for p in state["clients"] if p != os.getpid() and alive(p)]
+                save(state)
+                if not state["clients"] and not state["pending_entry"]:
+                    stop_unlocked()
+
+
+def emit(sequence):
+    if os.environ.get("TMUX"):
+        sequence = "\033Ptmux;" + sequence.replace("\033", "\033\033") + "\033\\"
+    sys.stdout.write(sequence)
+    sys.stdout.flush()
+
+
+@contextmanager
+def red_terminal():
+    enabled = sys.stdout.isatty() and os.environ.get("TERM") != "dumb"
+    if enabled:
+        emit("\033[22;0t\033]2;MRROBOT / x86 CTF LAB\007")
+        palette = ["#10070b", "#ff334f", "#d98592", "#ff9da7", "#e05575", "#c64f76", "#ff6b7f", "#f4cbd3",
+                   "#75404d", "#ff6b7f", "#f4a4b1", "#ffd5dc", "#ff8c9d", "#ff9aba", "#ffc0cc", "#ffffff"]
+        for index, color in enumerate(palette):
+            emit(f"\033]4;{index};{color}\007")
+        emit("\033]10;#f4cbd3\007\033]11;#10070b\007\033]12;#ffffff\007")
+    try:
+        yield
+    finally:
+        if enabled:
+            emit("\033]104\007\033]110\007\033]111\007\033]112\007\033[23;0t\033[0m")
+
+
+def endpoint(value, kind):
+    if not value.startswith(kind + ":"):
+        raise LabError(f"Expected {kind}:/path, got a different endpoint")
+    path = value[len(kind) + 1:]
+    if not path or any(c in path for c in "\n\r\x00"):
+        raise LabError("Empty or invalid transfer path")
+    if kind == "ctf":
+        if not PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
+            raise LabError("ctf: paths must be absolute and cannot contain ..")
+        return path
+    return str(Path(path).expanduser().resolve())
+
+
+def transfer(args):
+    push = args.command == "push"
+    local = endpoint(args.source if push else args.destination, "mac")
+    remote = endpoint(args.destination if push else args.source, "ctf")
+    if push and not Path(local).exists():
+        raise LabError("The local source does not exist")
+    with activity(args.online, require_running=not push) as state:
+        if push:
+            directory = remote if remote.endswith("/") else str(PurePosixPath(remote).parent)
+            result = ssh(state, "mkdir -p -- " + shlex.quote(directory))
+            if result.returncode:
+                raise LabError("Cannot create the guest destination; use a writable path such as /work/")
+        else:
+            Path(local).parent.mkdir(parents=True, exist_ok=True)
+        cmd = ["scp", *ssh_options(state), "-P", str(state["port"])]
+        if args.recursive or (push and Path(local).is_dir()):
+            cmd.append("-r")
+        guest = "ctf@127.0.0.1:" + remote
+        cmd += ["--", local, guest] if push else ["--", guest, local]
+        result = subprocess.run(cmd)
+        if result.returncode:
+            raise LabError("File transfer failed")
+        print("Transferred. " + ("Run `mrrobot` to enter; `mrrobot stop` discards the temporary workspace." if push else "Saved to the Mac."))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--online", action="store_true", help="allow guest outbound network access for this session")
+    sub = parser.add_subparsers(dest="command")
+    for name in ("push", "pull"):
+        p = sub.add_parser(name)
+        p.add_argument("source")
+        p.add_argument("destination")
+        p.add_argument("-r", "--recursive", action="store_true")
+    sub.add_parser("status")
+    sub.add_parser("stop", help="discard the active temporary workspace")
+    p = sub.add_parser("run", help="run a command in a disposable lab session")
+    p.add_argument("args", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    if args.command == "status":
+        with locked():
+            state = current()
+            print("MRROBOT: " + (("running / online" if state["online"] else "running / offline") if state else "stopped"))
+            if (ROOT / "system.qcow2").exists():
+                size = sum(p.stat().st_blocks * 512 for p in ROOT.rglob("*") if p.is_file())
+                print(f"Local installation: {size / 1024**3:.2f} GiB allocated")
+        return 0
+    if args.command == "stop":
+        with locked():
+            stop_unlocked()
+        print("MRROBOT stopped; temporary session data removed.")
+        return 0
+    if args.command in ("push", "pull"):
+        transfer(args)
+        return 0
+    if args.command == "run" and not args.args:
+        raise LabError("Provide a guest command after `mrrobot run`")
+    with activity(args.online, entry=True) as state:
+        if args.command == "run":
+            command = args.args[1:] if args.args[:1] == ["--"] else args.args
+            if not command:
+                raise LabError("Provide a guest command after `mrrobot run`")
+            return ssh(state, "cd /work && exec " + shlex.join(command)).returncode
+        with red_terminal():
+            mode = "online" if state["online"] else "offline"
+            return ssh(state, f"cd /work && export MRROBOT_NETWORK={mode} && exec bash -l", tty=True).returncode
+
+
+if __name__ == "__main__":
+    def interrupted(signum, frame):
+        raise KeyboardInterrupt
+
+    # Closing a terminal should unwind the session and remove its overlay too.
+    for event in (signal.SIGHUP, signal.SIGTERM):
+        signal.signal(event, interrupted)
+    try:
+        sys.exit(main())
+    except (LabError, OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f"mrrobot: {error}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)

@@ -12,3 +12,12 @@ __pycache__/
 *.bak
 *.pem
 *.key
+*.qcow2
+*.img
+*.iso
+*.deb
+*.partial
+identity
+identity.pub
+known_hosts
+state.json

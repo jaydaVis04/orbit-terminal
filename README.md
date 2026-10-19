@@ -91,6 +91,18 @@ cursors; Escape clears them. The default tmux prefix is Option-A.
 
 [Keyboard guide](docs/KEYS.md)
 
+## MRROBOT lab
+
+An optional red-themed x86 Linux CTF environment runs behind `mrrobot`, with
+Pwndbg/GDB, tracing tools, pwntools, a compiler toolchain, tmux, Neovim, and
+Starship. Prepare it once while online; later sessions use the local image and
+start offline. File transfers use `mrrobot push mac:/path ctf:/work/path` and
+`mrrobot pull ctf:/work/path mac:/path`.
+
+Sessions are temporary: pull your work before the last shell exits. The prepared
+image stays local; session overlays and build downloads are removed. See the
+[MRROBOT guide](mrrobot/README.md) for setup, tools, storage, and network options.
+
 ## Validation and privacy
 
 ```sh
