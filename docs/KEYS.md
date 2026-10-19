@@ -3,12 +3,16 @@
 ## Neovim
 
 Leader is **Space**. Pause after pressing it to see available shortcuts.
+In file and search pickers, Ctrl-J/K selects a result, Enter opens it, and Escape closes the picker.
 
 | Keys | Action |
 | --- | --- |
-| Space e / Space E | Explorer / reveal current file |
-| Space Space / Space f f | Find files |
-| Space f g / Space f w | Search project / word under cursor |
+| Space e / Space E | Open and focus explorer / reveal current file |
+| Space f e | Toggle explorer |
+| Space f h / Space f f / Space Space | Find files |
+| Space f w / Space f g | Live grep in the current directory |
+| Space f s | Search word under cursor |
+| Space f H | Search help |
 | Space f b / Space f r | Buffers / recent files |
 | Space / | Search this buffer |
 | Shift-H / Shift-L | Previous / next buffer |

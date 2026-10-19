@@ -90,7 +90,7 @@ return {
       d.section.buttons.val = {
         d.button("f", "  Find a file", ":Telescope find_files<CR>"),
         d.button("r", "  Recent files", ":Telescope oldfiles<CR>"),
-        d.button("e", "󰙅  Explorer", ":NvimTreeToggle<CR>"),
+        d.button("e", "󰙅  Explorer", ":NvimTreeFocus<CR>"),
         d.button("n", "  New file", ":enew<CR>"),
         d.button("h", "󰋖  Key guide", ":edit ~/.config/TERMINAL-KEYS.md<CR>"),
         d.button("l", "󰒲  Plugins", ":Lazy<CR>"),
