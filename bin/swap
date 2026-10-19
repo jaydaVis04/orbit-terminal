@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Switch the managed terminal configuration while preserving each profile's edits."""
+
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+PROFILES = ("original", "space", "mocha")
+
+
+class SwapError(Exception):
+    pass
+
+
+def read_state(path):
+    """Return bytes and mode, or None for an intentionally absent file."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(info.st_mode):
+        raise SwapError(f"Expected a regular file: {path}")
+    return (path.read_bytes(), stat.S_IMODE(info.st_mode))
+
+
+def write_state(path, state):
+    if state is None:
+        if path.exists() or path.is_symlink():
+            if not path.is_file() or path.is_symlink():
+                raise SwapError(f"Refusing to remove a non-regular file: {path}")
+            path.unlink()
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data, mode = state
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.swap-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(data)
+            output.flush()
+            os.fchmod(output.fileno(), mode)
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def encoded_json(value):
+    return ((json.dumps(value, indent=2) + "\n").encode(), 0o600)
+
+
+def transaction(steps):
+    """Preflight all destinations, then roll back every write if one fails."""
+    previous = {path: read_state(path) for path, _ in steps}
+    touched = []
+    try:
+        for path, state in steps:
+            touched.append(path)
+            write_state(path, state)
+    except Exception as error:
+        failures = []
+        for path in reversed(touched):
+            try:
+                write_state(path, previous[path])
+            except Exception as rollback_error:
+                failures.append(f"{path}: {rollback_error}")
+        message = f"Switch failed: {error}."
+        if failures:
+            message += " Rollback needs attention: " + "; ".join(failures)
+        else:
+            message += " Previous configuration restored."
+        raise SwapError(message) from error
+
+
+def load_json(path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise SwapError(f"Cannot read {path}: {error}") from error
+
+
+def load_manifest(root, home):
+    manifest = load_json(root / "manifest.json")
+    if not isinstance(manifest, list) or not manifest:
+        raise SwapError("manifest.json must contain a nonempty array.")
+    entries = []
+    seen_names, seen_targets = set(), set()
+    for item in manifest:
+        if not isinstance(item, dict):
+            raise SwapError("Every manifest entry must be an object.")
+        name, target_value = item.get("profile_path"), item.get("target")
+        if not isinstance(name, str) or not isinstance(target_value, str):
+            raise SwapError("Manifest entries need profile_path and target strings.")
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts or relative.as_posix() in ("", ".", "presence.json"):
+            raise SwapError(f"Unsafe profile path: {name}")
+        name = relative.as_posix()
+        target = Path(target_value)
+        if not target.is_absolute() or not target.resolve().is_relative_to(home):
+            raise SwapError(f"Target must be inside {home}: {target}")
+        if target.resolve().is_relative_to(root.resolve()):
+            raise SwapError(f"Target cannot overwrite the theme store: {target}")
+        if name in seen_names or str(target.resolve()) in seen_targets:
+            raise SwapError(f"Duplicate manifest entry: {name}")
+        for profile in PROFILES:
+            profile_root = root / "profiles" / profile
+            if not (profile_root / relative).resolve().is_relative_to(profile_root.resolve()):
+                raise SwapError(f"Profile path escapes its directory: {name}")
+        seen_names.add(name)
+        seen_targets.add(str(target.resolve()))
+        entries.append((name, target))
+    return entries
+
+
+def load_profile(root, profile, entries):
+    directory = root / "profiles" / profile
+    presence = load_json(directory / "presence.json")
+    if not isinstance(presence, dict):
+        raise SwapError(f"Invalid presence map for {profile}.")
+    states = {}
+    for name, _ in entries:
+        exists = presence.get(name)
+        if type(exists) is not bool:
+            raise SwapError(f"Missing presence entry in {profile}: {name}")
+        state = read_state(directory / name) if exists else None
+        if exists and state is None:
+            raise SwapError(f"Missing profile file: {directory / name}")
+        states[name] = state
+    return states
+
+
+def reload_running_apps(entries):
+    notes = []
+    try:
+        listing = subprocess.run(
+            ["ps", "-axo", "pid=,comm="], capture_output=True, text=True, timeout=5, check=True
+        )
+        count = 0
+        for line in listing.stdout.splitlines():
+            parts = line.strip().split(None, 1)
+            if len(parts) != 2 or Path(parts[1]).name != "kitty":
+                continue
+            pid = int(parts[0])
+            # Recheck immediately before signaling to avoid matching a helper or stale PID.
+            command = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "comm="],
+                capture_output=True, text=True, timeout=3, check=False,
+            ).stdout.strip()
+            if Path(command).name == "kitty":
+                try:
+                    os.kill(pid, signal.SIGUSR1)
+                    count += 1
+                except (ProcessLookupError, PermissionError):
+                    pass
+        if count:
+            notes.append("Kitty reloaded")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        notes.append("reload Kitty with Ctrl+Shift+F5")
+
+    tmux = shutil.which("tmux")
+    config = next((path for name, path in entries if name in ("tmux.conf", ".tmux.conf", "tmux/tmux.conf")), None)
+    if tmux and config and config.is_file():
+        try:
+            running = subprocess.run([tmux, "list-sessions"], capture_output=True, timeout=3)
+            if running.returncode == 0:
+                result = subprocess.run([tmux, "source-file", str(config)], capture_output=True, text=True, timeout=10)
+                if result.returncode == 0 and not result.stdout.strip() and not result.stderr.strip():
+                    notes.append("tmux reloaded")
+                else:
+                    notes.append("tmux reload failed; inspect its config")
+        except (OSError, subprocess.SubprocessError):
+            notes.append("tmux reload unavailable")
+    return notes
+
+
+def show_welcome(home):
+    neofetch = shutil.which("neofetch")
+    remote = any(os.environ.get(key) for key in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+    if neofetch and sys.stdout.isatty() and os.environ.get("KITTY_WINDOW_ID") and not remote:
+        try:
+            subprocess.run([neofetch, "--config", str(home / ".config/neofetch/config.conf")], timeout=15)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="swap",
+        description="Switch terminal themes and keep your edits in each profile.",
+        epilog="Examples: swap terminal · swap terminal original · swap terminal space · swap terminal status",
+    )
+    parser.add_argument("command", choices=("terminal",))
+    parser.add_argument("profile", nargs="?", choices=(*PROFILES, "status"))
+    parser.add_argument("--no-reload", action="store_true", help="change files without reloading apps or showing the welcome")
+    args = parser.parse_args()
+    # Overrides make isolated validation possible without touching the real configuration.
+    home = Path(os.environ.get("TERMINAL_THEMES_HOME", Path.home())).expanduser().resolve()
+    root = Path(os.environ.get("TERMINAL_THEMES_ROOT", home / ".config/terminal-themes")).expanduser().resolve()
+    if not root.is_dir():
+        raise SwapError(f"Terminal theme store is missing: {root}")
+    with (root / ".swap.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            active = (root / "active").read_text().strip()
+        except OSError as error:
+            raise SwapError(f"Cannot read active profile: {error}") from error
+        if active not in PROFILES:
+            raise SwapError(f"Unknown active profile: {active!r}")
+        if args.profile == "status":
+            print(f"Terminal theme: {active}")
+            return
+        desired = args.profile or ("original" if active in ("space", "mocha") else "space")
+        if desired == active:
+            print(f"Terminal theme is already {active}.")
+            return
+        entries = load_manifest(root, home)
+        incoming = load_profile(root, desired, entries)
+        outgoing = {name: read_state(target) for name, target in entries}
+        steps = []
+        departing_directory = root / "profiles" / active
+        for name, state in outgoing.items():
+            if state is not None:
+                steps.append((departing_directory / name, state))
+        steps.append((departing_directory / "presence.json", encoded_json({name: state is not None for name, state in outgoing.items()})))
+        steps.extend((target, incoming[name]) for name, target in entries)
+        steps.append((root / "active", ((desired + "\n").encode(), 0o600)))
+        transaction(steps)
+        notes = [] if args.no_reload else reload_running_apps(entries)
+        print(f"Terminal theme: {desired}. Your {active} edits are saved.")
+        if notes:
+            print("; ".join(notes) + ".")
+        print("Restart Neovim to load its theme.")
+        if desired == "space" and not args.no_reload:
+            show_welcome(home)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (SwapError, OSError) as error:
+        print(f"swap: {error}", file=sys.stderr)
+        sys.exit(1)

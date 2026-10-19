@@ -1,0 +1,48 @@
+add_newline = true
+format = """
+[](fg:#303446)\
+$os\
+$username\
+[](fg:#303446 bg:#fab387)\
+$directory\
+[](fg:#fab387 bg:#a6e3a1)\
+[](fg:#a6e3a1 bg:#94e2d5)\
+[](fg:#94e2d5 bg:#89b4fa)\
+[](fg:#89b4fa bg:#cba6f7)\
+[](fg:#cba6f7 bg:#f5c2e7)\
+$time\
+[](fg:#f5c2e7)\
+$line_break\
+$character"""
+
+[os]
+disabled = false
+style = "fg:#cdd6f4 bg:#303446"
+format = "[ $symbol ]($style)"
+
+[os.symbols]
+Macos = ""
+Arch = "󰣇"
+Ubuntu = "󰕈"
+Linux = "󰌽"
+
+[username]
+show_always = true
+style_user = "fg:#cdd6f4 bg:#303446"
+style_root = "fg:#f38ba8 bg:#303446"
+format = "[$user ]($style)"
+
+[directory]
+style = "fg:#232634 bg:#fab387"
+format = "[ $path ]($style)"
+truncation_length = 3
+
+[time]
+disabled = false
+time_format = "%R"
+style = "fg:#232634 bg:#f5c2e7"
+format = "[  $time ]($style)"
+
+[character]
+success_symbol = "[➜](bold green)"
+error_symbol = "[➜](bold red)"

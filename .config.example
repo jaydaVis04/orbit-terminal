@@ -1,0 +1,42 @@
+# Copy this TOML file to .config. The real .config is ignored by Git.
+# Run `python3 install.py` after editing to apply changes.
+
+[identity]
+# A display alias, not your OS username. Hostnames are hidden by default.
+display_name = "pilot"
+show_hostname = false
+
+[kitty]
+font_family = "DepartureMono Nerd Font Mono"
+font_size = 13.0
+padding = 18
+wallpaper = true
+background_tint = 0.22
+
+[cursor]
+color = "#ffffff"
+trail = 1
+decay_min = 0.25
+decay_max = 0.55
+threshold = 1
+
+[tmux]
+# M-a means Option-A on macOS; C-a means Control-A.
+prefix = "M-a"
+status_label = "ORBIT"
+
+[editor]
+command = "nvim"
+leader = " "
+clipboard = "unnamedplus"
+language_servers = ["lua_ls", "clangd", "pyright", "rust_analyzer", "ts_ls", "bashls"]
+
+[welcome]
+enabled = true
+show_machine = false
+show_cpu = true
+show_memory = true
+
+[paths]
+# Optional private tool directories. Tilde and $HOME expand at installation.
+extra_path = []

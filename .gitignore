@@ -1,0 +1,14 @@
+# Local preferences and generated machine state never belong in Git.
+/.config
+/.config.*.local
+/.generated/
+/backups/
+/state/
+/.env
+.DS_Store
+__pycache__/
+*.py[cod]
+*.log
+*.bak
+*.pem
+*.key

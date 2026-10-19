@@ -1,0 +1,166 @@
+# ORBIT — deep space, with only the context you need.
+"$schema" = 'https://starship.rs/config-schema.json'
+palette = 'orbit'
+add_newline = true
+scan_timeout = 30
+command_timeout = 700
+
+format = """
+[╭─](border)\
+[](cyan)\
+[  ](fg:abyss bg:cyan)\
+$username\
+[](cyan) \
+$directory\
+$git_branch\
+$git_status\
+$git_state\
+$nodejs\
+$bun\
+$python\
+$rust\
+$golang\
+$lua\
+$swift\
+$docker_context\
+$hostname\
+$line_break\
+[╰─](border)$jobs$character"""
+
+right_format = '$cmd_duration$time'
+
+[palettes.orbit]
+abyss = '#090d18'
+panel = '#10182a'
+border = '#26324d'
+text = '#d8e2ff'
+muted = '#7f8daf'
+cyan = '#7bdff6'
+violet = '#b39dff'
+pink = '#f6a6d5'
+amber = '#ffd18c'
+red = '#ff7e9f'
+
+[username]
+show_always = true
+style_user = 'bold fg:abyss bg:cyan'
+style_root = 'bold fg:red bg:cyan'
+format = '[$user ]($style)'
+
+[hostname]
+ssh_only = true
+style = 'pink'
+format = '[ 󰒋 $hostname]($style)'
+
+[directory]
+style = 'bold fg:text bg:panel'
+read_only_style = 'fg:pink bg:panel'
+format = '[](panel)[ 󰉋 $path]($style)[$read_only]($read_only_style)[ ](bg:panel)[](panel) '
+read_only = ' 󰌾'
+truncation_length = 3
+truncation_symbol = '…/'
+truncate_to_repo = true
+home_symbol = '~'
+
+[git_branch]
+symbol = ' '
+style = 'violet'
+format = '[$symbol$branch(:$remote_branch)]($style) '
+truncation_length = 24
+truncation_symbol = '…'
+
+[git_status]
+style = 'pink'
+format = '([$all_status$ahead_behind]($style) )'
+conflicted = '≠'
+ahead = '↑${count}'
+behind = '↓${count}'
+diverged = '↑${ahead_count}↓${behind_count}'
+untracked = '?${count}'
+stashed = '≡${count}'
+modified = '~${count}'
+staged = '+${count}'
+renamed = '»${count}'
+deleted = '-${count}'
+
+[git_state]
+style = 'amber'
+format = '[$state( $progress_current/$progress_total) ]($style)'
+
+[nodejs]
+symbol = ' '
+style = 'muted'
+format = '[$symbol$version ]($style)'
+version_format = '${major}.${minor}'
+
+[bun]
+symbol = 'bun '
+style = 'muted'
+format = '[$symbol$version ]($style)'
+version_format = '${major}.${minor}'
+
+[python]
+symbol = ' '
+style = 'amber'
+format = '[${symbol}${version}( · $virtualenv) ]($style)'
+version_format = '${major}.${minor}'
+
+[rust]
+symbol = ' '
+style = 'muted'
+format = '[$symbol$version ]($style)'
+version_format = '${major}.${minor}'
+
+[golang]
+symbol = ' '
+style = 'muted'
+format = '[$symbol$version ]($style)'
+version_format = '${major}.${minor}'
+
+[lua]
+symbol = ' '
+style = 'muted'
+format = '[$symbol$version ]($style)'
+version_format = '${major}.${minor}'
+
+[swift]
+symbol = ' '
+style = 'muted'
+format = '[$symbol$version ]($style)'
+version_format = '${major}.${minor}'
+
+[docker_context]
+symbol = ' '
+style = 'cyan'
+format = '[$symbol$context ]($style)'
+only_with_files = true
+
+[cmd_duration]
+min_time = 1500
+style = 'amber'
+format = '[󱎫 $duration  ]($style)'
+
+[time]
+disabled = false
+time_format = '%R'
+style = 'muted'
+format = '[ $time]($style)'
+
+[jobs]
+symbol = '•'
+style = 'violet'
+format = '[$symbol$number ]($style)'
+
+[character]
+success_symbol = '[❯](bold cyan)'
+error_symbol = '[❯](bold red)'
+vimcmd_symbol = '[❮](bold violet)'
+vimcmd_replace_one_symbol = '[❮](bold pink)'
+vimcmd_replace_symbol = '[❮](bold pink)'
+vimcmd_visual_symbol = '[❮](bold amber)'
+
+[package]
+disabled = true
+
+[line_break]
+disabled = false
